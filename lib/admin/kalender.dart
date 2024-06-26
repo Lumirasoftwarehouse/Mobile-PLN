@@ -1,14 +1,20 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:table_calendar/table_calendar.dart';
 
 class CalendarPage extends StatefulWidget {
+  final int idProject;
+
+  const CalendarPage({required this.idProject});
+
   @override
   _CalendarPageState createState() => _CalendarPageState();
 }
 
 class _CalendarPageState extends State<CalendarPage> {
-  late Map<DateTime, List<String>> events;
-  late List<String> selectedEvents;
+  late Map<DateTime, List<Map<String, dynamic>>> events;
+  late List<Map<String, dynamic>> selectedEvents;
   CalendarFormat calendarFormat = CalendarFormat.month;
   DateTime focusedDay = DateTime.now();
   DateTime? selectedDay;
@@ -16,20 +22,48 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   void initState() {
     super.initState();
-
-    // Dummy event data
-    events = {
-      DateTime.utc(2024, 6, 5): ['Event 1', 'Event 2'],
-      DateTime.utc(2024, 6, 10): ['Event 3'],
-      DateTime.utc(2024, 6, 15): ['Event 4', 'Event 5', 'Event 6'],
-      DateTime.utc(2024, 6, 20): ['Event 7'],
-    };
-
+    events = {};
     selectedDay = focusedDay;
-    selectedEvents = events[selectedDay] ?? [];
+    selectedEvents = [];
+    fetchDetailProject(widget.idProject);
   }
 
-  List<String> _getEventsForDay(DateTime day) {
+  Future<void> fetchDetailProject(int idProject) async {
+    final response = await http.get(Uri.parse(
+        'http://127.0.0.1:8000/api/project/detail-project/$idProject'));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final phases = data['data']['dataPhase'];
+
+      setState(() {
+        for (var phase in phases) {
+          final startDate = DateTime.parse(phase['start_date']);
+          final endDate = DateTime.parse(phase['end_date']);
+          final eventDetails = {
+            'phase': phase['phase'],
+            'start_date': phase['start_date'],
+            'end_date': phase['end_date'],
+          };
+
+          for (var date = startDate;
+              date.isBefore(endDate.add(Duration(days: 1)));
+              date = date.add(Duration(days: 1))) {
+            if (events.containsKey(date)) {
+              events[date]!.add(eventDetails);
+            } else {
+              events[date] = [eventDetails];
+            }
+          }
+        }
+        selectedEvents = _getEventsForDay(selectedDay!);
+      });
+    } else {
+      throw Exception('Failed to load project details');
+    }
+  }
+
+  List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
     return events[day] ?? [];
   }
 
@@ -38,7 +72,48 @@ class _CalendarPageState extends State<CalendarPage> {
       this.selectedDay = selectedDay;
       this.focusedDay = focusedDay;
       selectedEvents = _getEventsForDay(selectedDay);
+
+      if (selectedEvents.isNotEmpty) {
+        _showEventDetailsModal(selectedEvents);
+      }
     });
+  }
+
+  void _showEventDetailsModal(List<Map<String, dynamic>> events) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Event Details'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: events.map((event) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Phase: ${event['phase']}',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text('Start Date: ${event['start_date']}'),
+                    Text('End Date: ${event['end_date']}'),
+                    Divider(),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -104,7 +179,9 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                   child: ListTile(
                     leading: const Icon(Icons.event, color: Colors.blue),
-                    title: Text(selectedEvents[index]),
+                    title: Text(selectedEvents[index]['phase']),
+                    subtitle: Text(
+                        'Start: ${selectedEvents[index]['start_date']} End: ${selectedEvents[index]['end_date']}'),
                   ),
                 );
               },

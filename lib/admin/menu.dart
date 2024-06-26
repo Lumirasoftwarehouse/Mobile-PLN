@@ -16,7 +16,7 @@ class _MenuAdminState extends State<MenuAdmin> {
   final List<Widget> _pages = [
     DashboardPage(),
     ProjectPage(),
-    CalendarPage(),
+    DashboardPage(),
     DashboardPage(),
   ];
 
